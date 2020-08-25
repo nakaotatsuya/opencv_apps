@@ -2,6 +2,10 @@
   <arg name="launch_face_detection" default="true" />
   <arg name="launch_trainer" default="true" />
 
+  <arg name="use_nodelet" default="true" />
+  <arg name="launch_manager" default="false" />
+  <arg name="nodelet_manager" default="/realsense_front/realsense2_camera_manager" />
+
   <arg name="use_opencv3" default="false" />
   <arg name="use_opencv3_1" default="false" />
   <arg name="use_opencv3_2" default="false" />
@@ -14,11 +18,12 @@
   <arg name="depth" default="depth" />
   <arg name="data_dir" default="~/.ros/opencv_apps/face_data" />
 
-  <include file="$(find opencv_apps)/launch/face_detection.launch"
-           if="$(arg launch_face_detection)">
+  <include file="$(find opencv_apps)/launch/face_detection.launch" if="$(arg launch_face_detection)">
     <arg name="image" value="$(arg image)" />
     <arg name="debug_view" value="$(arg debug_view)" />
     <arg name="node_name" value="face_detection" />
+    <arg name="use_nodelet" value="$(arg use_nodelet)" />
+    <arg name="nodelet_manager" value="$(arg nodelet_manager)" />
     <arg name="use_opencv3" value="$(arg use_opencv3)" />
     <arg name="use_opencv3_1" value="$(arg use_opencv3_1)" />
     <arg name="use_opencv3_2" value="$(arg use_opencv3_2)" />
@@ -26,14 +31,27 @@
     <arg name="use_opencv4" value="$(arg use_opencv4)" />
   </include>
 
-  <node name="face_recognition" pkg="opencv_apps" type="face_recognition"
-        output="screen">
-    <param name="data_dir" value="$(arg data_dir)" />
-    <param name="queue_size" value="$(arg queue_size)" />
-    <remap from="image" to="$(arg image)" />
-    <remap from="depth" to="$(arg depth)" />
-    <remap from="faces" to="face_detection/faces" />
-  </node>
+  <group unless="$(arg use_nodelet)">
+    <!-- launch files for usage without nodelets -->
+    <node name="face_recognition" pkg="opencv_apps" type="face_recognition" output="screen">
+      <param name="data_dir" value="$(arg data_dir)" />
+      <param name="queue_size" value="$(arg queue_size)" />
+      <remap from="image" to="$(arg image)" />
+      <remap from="depth" to="$(arg depth)" />
+      <remap from="faces" to="face_detection/faces" />
+    </node>
+  </group>
+  <group if="$(arg use_nodelet)">
+    <node if="$(arg launch_manager)" pkg="nodelet" type="nodelet" name="$(arg nodelet_manager)" args="manager" output="screen" launch-prefix="nice -n 20" />
+
+    <node pkg="nodelet" type="nodelet" name="face_recognition" args="load opencv_apps/face_recognition $(arg nodelet_manager)" output="screen" launch-prefix="nice -n 20">
+      <param name="data_dir" value="$(arg data_dir)" />
+      <param name="queue_size" value="$(arg queue_size)" />
+      <remap from="image" to="$(arg image)" />
+      <remap from="depth" to="$(arg depth)" />
+      <remap from="faces" to="face_detection/faces" />
+    </node>
+  </group>
 
   <node name="face_recognition_trainer" pkg="opencv_apps" type="face_recognition_trainer.py"
         if="$(arg launch_trainer)" launch-prefix="xterm -fn 12x24 -e" respawn="true">
