@@ -11,6 +11,7 @@
   <arg name="queue_size" default="100" doc="Specigy queue_size of input image subscribers" />
 
   <arg name="image" default="image" />
+  <arg name="depth" default="depth" />
   <arg name="data_dir" default="~/.ros/opencv_apps/face_data" />
 
   <include file="$(find opencv_apps)/launch/face_detection.launch"
@@ -30,6 +31,7 @@
     <param name="data_dir" value="$(arg data_dir)" />
     <param name="queue_size" value="$(arg queue_size)" />
     <remap from="image" to="$(arg image)" />
+    <remap from="depth" to="$(arg depth)" />
     <remap from="faces" to="face_detection/faces" />
   </node>
 

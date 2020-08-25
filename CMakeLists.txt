@@ -17,7 +17,7 @@ else(CMAKE_COMPILER_IS_GNUCXX)
   add_definitions("-std=c++0x")
 endif(CMAKE_COMPILER_IS_GNUCXX)
 
-find_package(catkin REQUIRED COMPONENTS cv_bridge dynamic_reconfigure message_generation image_transport nodelet roscpp sensor_msgs std_msgs std_srvs)
+find_package(catkin REQUIRED COMPONENTS cv_bridge dynamic_reconfigure message_generation image_transport nodelet roscpp sensor_msgs std_msgs std_srvs spencer_tracking_msgs pcl_ros)
 
 find_package(OpenCV REQUIRED)
 message(STATUS "OpenCV VERSION: ${OpenCV_VERSION}")
@@ -115,12 +115,11 @@ generate_messages(
   std_msgs
 )
 
-catkin_package(CATKIN_DEPENDS dynamic_reconfigure message_runtime nodelet roscpp sensor_msgs std_msgs std_srvs
+catkin_package(CATKIN_DEPENDS dynamic_reconfigure message_runtime nodelet roscpp sensor_msgs std_msgs std_srvs spencer_tracking_msgs pcl_ros
 #                DEPENDS OpenCV
                INCLUDE_DIRS include
                LIBRARIES ${PROJECT_NAME}
 )
-
 include_directories(include ${catkin_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
 
 ## Macro to add nodelets

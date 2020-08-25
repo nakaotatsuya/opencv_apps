@@ -53,7 +53,11 @@
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
 #include <message_filters/sync_policies/exact_time.h>
+#include <pcl/point_types.h>
+#include <pcl_ros/point_cloud.h>
 #include <sensor_msgs/image_encodings.h>
+#include <sensor_msgs/PointCloud2.h>
+#include <spencer_tracking_msgs/DetectedPersons.h>
 
 #include <opencv_apps/nodelet.h>
 #include <opencv_apps/FaceArrayStamped.h>
@@ -296,8 +300,11 @@ class FaceRecognitionNodelet : public opencv_apps::Nodelet
 {
   typedef opencv_apps::FaceRecognitionConfig Config;
   typedef dynamic_reconfigure::Server<Config> Server;
-  typedef message_filters::sync_policies::ExactTime<sensor_msgs::Image, opencv_apps::FaceArrayStamped> SyncPolicy;
-  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, opencv_apps::FaceArrayStamped>
+  typedef message_filters::sync_policies::ExactTime<sensor_msgs::Image, sensor_msgs::PointCloud2,
+                                                    opencv_apps::FaceArrayStamped>
+      SyncPolicy;
+  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::PointCloud2,
+                                                          opencv_apps::FaceArrayStamped>
       ApproximateSyncPolicy;
 
   Config config_;
@@ -306,9 +313,11 @@ class FaceRecognitionNodelet : public opencv_apps::Nodelet
   boost::shared_ptr<message_filters::Synchronizer<SyncPolicy> > sync_;
   boost::shared_ptr<message_filters::Synchronizer<ApproximateSyncPolicy> > async_;
   image_transport::SubscriberFilter img_sub_;
+  message_filters::Subscriber<sensor_msgs::PointCloud2> depth_sub_;
   message_filters::Subscriber<opencv_apps::FaceArrayStamped> face_sub_;
   ros::Publisher debug_img_pub_;
   ros::Publisher face_pub_;
+  ros::Publisher face_position_for_spencer_pub_;
   ros::ServiceServer train_srv_;
 
   bool save_train_data_;
@@ -409,7 +418,29 @@ class FaceRecognitionNodelet : public opencv_apps::Nodelet
     model_->predict(resized_img, label, confidence);
   }
 
-  void faceImageCallback(const sensor_msgs::Image::ConstPtr& image,
+  bool convertPclMessageToMat(const sensor_msgs::PointCloud2::ConstPtr& shared_image_msg, cv::Mat& depth_image)
+  {
+    pcl::PointCloud<pcl::PointXYZ> depth_cloud;  // point cloud
+    pcl::fromROSMsg(*shared_image_msg, depth_cloud);
+    depth_image.create(depth_cloud.height, depth_cloud.width, CV_32FC3);
+    uchar* depth_image_ptr = (uchar*)depth_image.data;
+    for (int v = 0; v < (int)depth_cloud.height; v++)
+    {
+      int baseIndex = depth_image.step * v;
+      for (int u = 0; u < (int)depth_cloud.width; u++)
+      {
+        int index = baseIndex + 3 * u * sizeof(float);
+        float* data_ptr = (float*)(depth_image_ptr + index);
+        pcl::PointXYZ point_xyz = depth_cloud(u, v);
+        data_ptr[0] = point_xyz.x;
+        data_ptr[1] = point_xyz.y;
+        data_ptr[2] = (std::isnan(point_xyz.z)) ? 0.f : point_xyz.z;
+      }
+    }
+    return true;
+  }
+
+  void faceImageCallback(const sensor_msgs::Image::ConstPtr& image, const sensor_msgs::PointCloud2::ConstPtr& depth,
                          const opencv_apps::FaceArrayStamped::ConstPtr& faces)
   {
     NODELET_DEBUG("faceImageCallback");
@@ -429,6 +460,7 @@ class FaceRecognitionNodelet : public opencv_apps::Nodelet
     {
       cv::Mat cv_img = cv_bridge::toCvShare(image, enc::BGR8)->image;
       opencv_apps::FaceArrayStamped ret_msg = *faces;
+      std::vector<spencer_tracking_msgs::DetectedPerson> face_pose_vector;
       for (size_t i = 0; i < faces->faces.size(); ++i)
       {
         cv::Mat face_img, resized_image;
@@ -445,7 +477,31 @@ class FaceRecognitionNodelet : public opencv_apps::Nodelet
         // draw debug image
         if (publish_debug_image)
           drawFace(cv_img, ret_msg.faces[i]);
+
+        cv::Mat depth_image;
+        convertPclMessageToMat(depth, depth_image);
+        cv::Point3f p;
+        p = depth_image.at<cv::Point3f>(ret_msg.faces[i].face.y, ret_msg.faces[i].face.x);
+        spencer_tracking_msgs::DetectedPerson detected_person;
+        detected_person.pose.pose.position.x = p.x;
+        detected_person.pose.pose.position.y = p.y;
+        detected_person.pose.pose.position.z = p.z;
+        detected_person.modality = "face";
+        detected_person.name = ret_msg.faces[i].label;
+        const double LARGE_VARIANCE = 999999999;
+        const double pose_variance = 0.05;
+        detected_person.pose.covariance[0 * 6 + 0] = pose_variance;
+        detected_person.pose.covariance[1 * 6 + 1] = pose_variance;
+        detected_person.pose.covariance[2 * 6 + 2] = pose_variance;
+        detected_person.pose.covariance[3 * 6 + 3] = LARGE_VARIANCE;
+        detected_person.pose.covariance[4 * 6 + 4] = LARGE_VARIANCE;
+        detected_person.pose.covariance[5 * 6 + 5] = LARGE_VARIANCE;
+        face_pose_vector.push_back(detected_person);
       }
+      spencer_tracking_msgs::DetectedPersons spencer_msg;
+      spencer_msg.detections = face_pose_vector;
+      spencer_msg.header = depth->header;
+      face_position_for_spencer_pub_.publish(spencer_msg);
       face_pub_.publish(ret_msg);
       if (publish_debug_image)
       {
@@ -626,24 +682,26 @@ class FaceRecognitionNodelet : public opencv_apps::Nodelet
   {
     NODELET_DEBUG("subscribe");
     img_sub_.subscribe(*it_, "image", 1);
+    depth_sub_.subscribe(*nh_, "depth", 1);
     face_sub_.subscribe(*nh_, "faces", 1);
     if (use_async_)
     {
       async_ = boost::make_shared<message_filters::Synchronizer<ApproximateSyncPolicy> >(queue_size_);
-      async_->connectInput(img_sub_, face_sub_);
-      async_->registerCallback(boost::bind(&FaceRecognitionNodelet::faceImageCallback, this, _1, _2));
+      async_->connectInput(img_sub_, depth_sub_, face_sub_);
+      async_->registerCallback(boost::bind(&FaceRecognitionNodelet::faceImageCallback, this, _1, _2, _3));
     }
     else
     {
       sync_ = boost::make_shared<message_filters::Synchronizer<SyncPolicy> >(queue_size_);
-      sync_->connectInput(img_sub_, face_sub_);
-      sync_->registerCallback(boost::bind(&FaceRecognitionNodelet::faceImageCallback, this, _1, _2));
+      sync_->connectInput(img_sub_, depth_sub_, face_sub_);
+      sync_->registerCallback(boost::bind(&FaceRecognitionNodelet::faceImageCallback, this, _1, _2, _3));
     }
   }
 
   void unsubscribe()  // NOLINT(modernize-use-override)
   {
     NODELET_DEBUG("unsubscribe");
+    depth_sub_.unsubscribe();
     img_sub_.unsubscribe();
     face_sub_.unsubscribe();
   }
@@ -668,6 +726,7 @@ public:
     // advertise
     debug_img_pub_ = advertise<sensor_msgs::Image>(*pnh_, "debug_image", 1);
     face_pub_ = advertise<opencv_apps::FaceArrayStamped>(*pnh_, "output", 1);
+    face_position_for_spencer_pub_ = advertise<spencer_tracking_msgs::DetectedPersons>(*pnh_, "face_position", 1);
     train_srv_ = pnh_->advertiseService("train", &FaceRecognitionNodelet::trainCallback, this);
     it_ = boost::shared_ptr<image_transport::ImageTransport>(new image_transport::ImageTransport(*nh_));
 
