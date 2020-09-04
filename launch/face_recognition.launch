@@ -33,8 +33,15 @@
     <remap from="faces" to="face_detection/faces" />
   </node>
 
+  <!-- <node name="face_recognition_trainer" pkg="opencv_apps" type="face_recognition_trainer.py" -->
+  <!--       if="$(arg launch_trainer)" launch-prefix="xterm -fn 12x24 -e" respawn="true"> -->
+  <!--   <remap from="image" to="$(arg image)" /> -->
+  <!--   <remap from="faces" to="face_detection/faces" /> -->
+  <!--   <remap from="train" to="face_recognition/train" /> -->
+  <!-- </node> -->
+
   <node name="face_recognition_trainer" pkg="opencv_apps" type="face_recognition_trainer.py"
-        if="$(arg launch_trainer)" launch-prefix="xterm -fn 12x24 -e" respawn="true">
+        if="$(arg launch_trainer)" respawn="true">
     <remap from="image" to="$(arg image)" />
     <remap from="faces" to="face_detection/faces" />
     <remap from="train" to="face_recognition/train" />

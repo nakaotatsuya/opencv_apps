@@ -1,0 +1,9 @@
+<launch>
+  <arg name="image" default="image" />
+  <!-- <arg name="output_image" default="output_image" /> -->
+  <node name="pile_up" pkg="opencv_apps" type="pile_up.py"
+		respawn="true" >
+	<remap from="image" to="$(arg image)" />
+	<!-- <remap from="~output" to="$(arg output_image)" /> -->
+  </node>
+</launch>
