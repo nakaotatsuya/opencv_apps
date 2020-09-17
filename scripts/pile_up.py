@@ -30,8 +30,12 @@ class PileUp(object):
         cv_overlay_image = cv.imread(
             os.path.join(now_dir, "../picture/face_icon.jpg"), cv.IMREAD_UNCHANGED)
 
+        cv_background_image = cv.resize(cv_background_image, (480,320))
+        cv_overlay_image = cv.resize(cv_overlay_image, (240,160))
+
+        #print(cv_background_image.shape)
+        #print(cv_overlay_image.shape)
         
-        cv_overlay_image = cv.resize(cv_overlay_image, (480,320))
 
         #height = cv_overlay_image.shape[0]
         #width = cv_overlay_image.shape[1]
@@ -55,13 +59,13 @@ class PileUp(object):
         pil_rgba_bg_temp = _Image.new('RGBA', pil_rgba_bg_image.size,
                                      (255, 255, 255, 170))
 
-        #point = (100,100)
+        point = (120,80)
         
         # 座標を指定し重ね合わせる
-        pil_rgba_bg_iamge.putalpha(128)
+        #pil_rgba_bg_iamge.putalpha(128)
         pil_rgba_ol_image.putalpha(128)
         
-        pil_rgba_bg_temp.paste(pil_rgba_ol_image, point, pil_rgba_ol_image)
+        pil_rgba_bg_image.paste(pil_rgba_ol_image, point, pil_rgba_ol_image)
         
         #result_image = \
         #    _Image.composite(pil_rgba_bg_image, pil_rgba_ol_image, pil_rgba_bg_temp)
@@ -69,8 +73,8 @@ class PileUp(object):
         
 
         # OpenCV形式画像へ変換
-        cv_bgr_result_image = cv.cvtColor(
-            np.asarray(result_image), cv.COLOR_RGBA2BGRA)
+        #cv_bgr_result_image = cv.cvtColor(np.asarray(result_image), cv.COLOR_RGBA2BGRA)
+        cv_bgr_result_image = cv.cvtColor(np.asarray(pil_rgba_bg_image), cv.COLOR_RGBA2BGRA)
 
         circle_pos = [(240,30), (240,290), (110,160), (370,160)]
         for xy in circle_pos:
